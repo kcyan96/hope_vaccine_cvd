@@ -1,4 +1,4 @@
-setwd("/mnt/Others/Dataset/")
+setwd("/mnt/Others/Dataset/LONGCOVID_CC/")
 library(data.table)
 library(readxl)
 library(survey)
@@ -10,7 +10,7 @@ PHASE <- "_acute"
 
 # 3. Censoring ----
 COMP <- "INF_VAC_dose_May"
-cohort<-readRDS(paste0("LONGCOVID_CC/COMP_", COMP, PHASE, "_2.cohort_iptw.RDS"))
+cohort<-readRDS(paste0("COMP_", COMP, PHASE, "_2.cohort_iptw_jiayi.RDS"))
 
 #OUTCOMES <- c( "death") 
 OUTCOMES <- c("cv.major" ,"cv.stroke" ,"cv.cad" ,"cv.hf" ,"cv_death", "death")
@@ -19,10 +19,10 @@ OUTCOMES <- c("cv.major" ,"cv.stroke" ,"cv.cad" ,"cv.hf" ,"cv_death", "death")
 
 #cohort[, `:=`(hx.death = 0)]
 cohort[, `:=`(hx.cv_death = 0, hx.death = 0)]
-cohort[, postacute.index.date := index.date+21]
+cohort[, postacute.index.date := index.date+28]
 
 
-# Acute phase (within 21 days)
+# Acute phase (within 28 days)
 OUTCOMES <- c("cv.major" ,"cv.stroke" ,"cv.cad" ,"cv.hf" ,"cv_death", "death")
 
 for(oc in OUTCOMES) {
@@ -73,13 +73,11 @@ run_fit_IR <- function(data, phase, outcomes) {
 
 
 res_cr <- sapply(c("acute"), function(p) run_fit_fg(cohort, p, OUTCOMES), simplify=F, USE.NAMES=T)
-res_cr_IR <- sapply(c("acute"), function(p) run_fit_IR(cohort, p, OUTCOMES), simplify=F, USE.NAMES=T)
+#res_cr_IR <- sapply(c("acute"), function(p) run_fit_IR(cohort, p, OUTCOMES), simplify=F, USE.NAMES=T)
 
-sink(paste0("LONGCOVID_CC/output/CR_", COMP, PHASE, "_log.txt"), append=F, split=T)
-print("Competing risk")
-res_cr
-print("cr IR")
-res_cr_IR
-
-gc()
-#unlink(paste0("LONGCOVID_CC/output/CR_", COMP, PHASE, "_log.txt"))
+sink(paste0("output/T2_acute_28d_competing_jiayi.txt"), append=F, split=T)
+for(oc in OUTCOMES) {
+  cat(oc, "\n")
+  print(rbind("-",exp(cbind(coef(res_cr$acute[[oc]]),confint(res_cr$acute[[oc]])))))
+}
+sink()

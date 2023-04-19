@@ -1,4 +1,4 @@
-setwd("/mnt/Others/Dataset/")
+setwd("/mnt/Others/Dataset/LONGCOVID_CC/")
 library(data.table)
 library(readxl)
 library(survey)
@@ -10,7 +10,7 @@ PHASE <- "_postacute"
 
 # 3. Censoring ---- 
 COMP <- "INF_VAC_dose_May"
-cohort<-readRDS(paste0("LONGCOVID_CC/COMP_", COMP, PHASE, "_2.cohort_iptw.RDS"))
+cohort<-readRDS(paste0("COMP_", COMP, PHASE, "_2.cohort_iptw_jiayi.RDS"))
 
 #OUTCOMES <- c( "death") 
 OUTCOMES <- c("cv.major" ,"cv.stroke" ,"cv.cad" ,"cv.hf" ,"cv_death", "death")
@@ -29,10 +29,10 @@ for(oc in OUTCOMES) {
   
 }
 
-# Postacute phase (after 21 days)
+# Postacute phase (after 28 days)
 for(oc in OUTCOMES) {
   cohort[, c(paste0("postacute.hx.",oc)) := as.numeric(get(paste0("hx.",oc)) | (!is.na(get(paste0("outcome.",oc,".date"))) & get(paste0("outcome.",oc,".date")) < postacute.index.date))]
-  cohort[, c(paste0("postacute.censor.date.", oc)) := pmin(get(paste0("outcome.",oc,".date")), death_date_ymd, as.Date("2022-08-15"), na.rm=T)]
+  cohort[, c(paste0("postacute.censor.date.", oc)) := pmin(get(paste0("outcome.",oc,".date")), death_date_ymd, as.Date("2023-01-23"), na.rm=T)]
   cohort[, c(paste0("postacute.time.to.censor.", oc)) := as.numeric(get(paste0("postacute.censor.date.", oc)) - postacute.index.date) + 1]
   cohort[, c(paste0("postacute.outcome.", oc)) := as.numeric(!is.na(get(paste0("outcome.",oc,".date"))) & get(paste0("postacute.censor.date.", oc))==get(paste0("outcome.",oc,".date")) & get(paste0("outcome.",oc,".date"))>=postacute.index.date)]
 }
@@ -77,13 +77,11 @@ run_fit_IR <- function(data, phase, outcomes) {
 }
 
 res_cr <- sapply(c("postacute"), function(p) run_fit_fg(cohort, p, OUTCOMES), simplify=F, USE.NAMES=T)
-res_cr_IR <- sapply(c("postacute"), function(p) run_fit_IR(cohort, p, OUTCOMES), simplify=F, USE.NAMES=T)
+#res_cr_IR <- sapply(c("postacute"), function(p) run_fit_IR(cohort, p, OUTCOMES), simplify=F, USE.NAMES=T)
 
-sink(paste0("LONGCOVID_CC/output/CR_", COMP, PHASE, "_log.txt"), append=F, split=T)
-print("Competing risk")
-res_cr
-print("cr IR")
-res_cr_IR
-
-gc()
-#unlink(paste0("LONGCOVID_CC/output/CR_", COMP, PHASE, "_log.txt"))
+sink(paste0("output/T2_postacute_28d_competing_jiayi.txt"), append=F, split=T)
+for(oc in OUTCOMES) {
+  cat(oc, "\n")
+  print(rbind("-",exp(cbind(coef(res_cr$postacute[[oc]]),confint(res_cr$postacute[[oc]])))))
+}
+sink()

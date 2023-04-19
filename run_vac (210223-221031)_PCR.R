@@ -1,4 +1,4 @@
-setwd("/mnt/Others/Dataset/")
+setwd("/mnt/Others/Dataset/LONGCOVID_CC/")
 library(data.table)
 library(readxl)
 library(survey)
@@ -17,14 +17,14 @@ table1 <- function(cohort, wts_col=NULL, strata="group") {
     tblfun <- CreateTableOne
   }
   
-  tb1_def <- setDT(read_excel("LONGCOVID_CC/codes.xlsx", sheet="table1"))
+  tb1_def <- setDT(read_excel("codes_new.xlsx", sheet="table1"))
   t1 <- tblfun(tb1_def[!is.na(Name), Name], c(strata), data=cohort_, test=F)
   print(t1, smd=T, test=F)
   return(t1)
 }
 
 as.data.table.TableOne <- function(t) {
-  tb1_def <- setDT(read_excel("LONGCOVID_CC/codes.xlsx", sheet="table1"))[!is.na(Name), .(Name, Description)]
+  tb1_def <- setDT(read_excel("codes_new.xlsx", sheet="table1"))[!is.na(Name), .(Name, Description)]
   tb1_def <- rbind(list(Name="n", Description="n"), tb1_def)
   t <- as.data.frame(print(t, test=F, smd=T, dropEqual=T, noSpaces=T))
   varlabels <- rownames(t)
@@ -36,11 +36,10 @@ as.data.table.TableOne <- function(t) {
 }
 
 
-
-
 # 1. Load cohort ----
-cohort <- readRDS("raw dataset/long_covid/longcovid.cohort.matched_all-RAT_210223.220531.RDS") # n=4600555
-# 
+#cohort <- readRDS("longcovid.cohort.matched_200401.221031_overall.RDS") [index.date>="2021-02-23"]# n=3787149
+cohort <- readRDS("longcovid.cohort.matched_all_210223.221031_PCR_jiayi.RDS") [index.date>="2021-02-23"]
+
 
 # Common variables
 cohort[, Age := as.numeric(substr(index.date,1,4)) - dob_y]
@@ -81,33 +80,20 @@ cohort$BNT162b2 <- as.factor(cohort$BNT162b2)
 cohort[, CoronaVac := 0]
 cohort[vacc_status=="S"|vacc_status=="SS"|vacc_status=="SSS", CoronaVac := 1]
 cohort$CoronaVac <- as.factor(cohort$CoronaVac)
+cohort[, postacute:=as.numeric(is.na(death_date_ymd) | death_date_ymd >= (index.date+28))]
 
 cohort_full <- copy(cohort)
 
-saveRDS(cohort_full, "LONGCOVID_CC/cohort_acute.RDS")
+saveRDS(cohort_full, "cohort_acute_PCR_jiayi.RDS")
 
-# Remove index date - latest vac > 180 days
-for(i in 1:4){
-  cohort[nchar(vacc_status)==i, time.since.last_dose := as.numeric(index.date - get(paste0("Date of vaccination.", c("1st","2nd","3rd","4th")[i])))]
-}
-cohort <- cohort[group=="X" | time.since.last_dose <= 180]   # n=2926865
+cohort_postacute <- copy(cohort[postacute==1])
 
-cohort_180 <- copy(cohort)
-saveRDS(cohort_180, "LONGCOVID_CC/cohort_acute_180.RDS")
+cohort_postacute[, index.date := (index.date+28)]
 
-# Keep PCR+ only
-cohort <- cohort_full[COVID.test=="HA_241"|COVID.test=="HA_244"|COVID.test=="HA_245"|COVID.test=="PCR"]   # n=487190
+saveRDS(cohort_postacute, "cohort_postacute_PCR_jiayi.RDS")
 
-cohort_pcr <- copy(cohort)
-saveRDS(cohort_pcr, "LONGCOVID_CC/cohort_acute_pcr.RDS")
-
-rm(cohort, cohort_full, cohort_180, cohort_pcr)
-
-gc()
-
-
-## Weighting ---------------------------------------------
-cohort_full <- readRDS("LONGCOVID_CC/cohort_acute.RDS")
+## ACUTE Weighting ---------------------------------------------
+cohort_full <- readRDS("cohort_acute_PCR_jiayi.RDS")
 # SELECT comparison
 COMP <- "INF_VAC_dose_May"
 cohort <- cohort_full[!is.na(group) & infected==1]
@@ -126,7 +112,7 @@ tb1 <- list(acute=table1(cohort), vaccinated=table1(cohort_))
 
 library(cobalt)
 
-PS_def <- setDT(read_excel("LONGCOVID_CC/codes.xlsx", sheet="PS"))[!is.na(Name)]
+PS_def <- setDT(read_excel("codes_new.xlsx", sheet="PS"))[!is.na(Name)]
 PS_formula <- function(exp,lvl) paste0(exp, " ~ ", paste0(PS_def[Set<=lvl, Name], collapse=" + "))
 PS_assess <- function(out) {
   print(summary(out))
@@ -148,33 +134,38 @@ cohort_[, group := factor(sub("^$","X",vacc_status_new), levels=c("1d","2d","3d"
 library(survey)
 tb1.iptw <- list(acute=table1(cohort, "wts_acute"), vaccinated=table1(cohort_, "wts_acute"))
 
-save(W.glm, tb1, tb1.iptw, file=paste0("LONGCOVID_CC/COMP_", COMP, PHASE, "_W.glm.RData"))
-saveRDS(cohort, paste0("LONGCOVID_CC/COMP_", COMP, PHASE, "_2.cohort_iptw.RDS"))
+saveRDS(cohort, paste0("COMP_", COMP, PHASE, "_2.cohort_iptw_PCR_jiayi.RDS"))
 
 library(writexl)
 xl_tabs <- c(lapply(c(tb1.iptw,tb1), function(t) as.data.table(t)))
-write_xlsx(xl_tabs, paste0("LONGCOVID_CC/output/tab_", COMP, PHASE, ".xlsx"))
+write_xlsx(xl_tabs, paste0("output/tab_", COMP, PHASE, "_PCR_jiayi.xlsx"))
 
 rm(cohort, tb1, tb1.iptw, W.glm, W.glm.acute, xl_tabs)
 
 gc()
 
 
-
-# Sen 180
-
-cohort_180 <- readRDS("LONGCOVID_CC/cohort_acute_180.RDS")
+## POSTACUTE Weighting ---------------------------------------------
+cohort_full <- readRDS("cohort_postacute_PCR_jiayi.RDS")
 # SELECT comparison
-COMP <- "INF_VAC_dose_May_180"
-cohort <- cohort_180[!is.na(group) & infected==1]
+COMP <- "INF_VAC_dose_May"
+cohort <- cohort_full[!is.na(group) & infected==1]
 cohort$group <- cohort$group_dose
-PHASE <- "_acute"
+PHASE <- "_postacute"
+
+cohort[, vaccinated := 0]
+cohort[group_dose!="X", vaccinated := 1]
+cohort_ <-cohort[vaccinated==1]
+cohort_[, group := factor(sub("^$","X",vacc_status_new), levels=c("1d","2d","3d"))]
+
+library(tableone)
+tb1 <- list(postacute=table1(cohort), vaccinated=table1(cohort_))
 
 # 2. Propensity score ----
 
 library(cobalt)
 
-PS_def <- setDT(read_excel("LONGCOVID_CC/codes.xlsx", sheet="PS"))[!is.na(Name)]
+PS_def <- setDT(read_excel("codes_new.xlsx", sheet="PS"))[!is.na(Name)]
 PS_formula <- function(exp,lvl) paste0(exp, " ~ ", paste0(PS_def[Set<=lvl, Name], collapse=" + "))
 PS_assess <- function(out) {
   print(summary(out))
@@ -183,44 +174,27 @@ PS_assess <- function(out) {
 }
 
 library(WeightIt)
-cohort[, acute := 1]
+cohort[, postacute := 1]
 W.glm <- weightit(as.formula(PS_formula("group",4)), data=cohort, estimand="ATE", method="ps")
 PS_assess(W.glm)
-cohort[, wts_acute := W.glm$weights]
+cohort[, wts_postacute := W.glm$weights]
 
-saveRDS(cohort, paste0("LONGCOVID_CC/COMP_", COMP, PHASE, "_2.cohort_iptw.RDS"))
-gc()
+cohort[, vaccinated := 0]
+cohort[group_dose!="X", vaccinated := 1]
+cohort_ <-cohort[vaccinated==1]
+cohort_[, group := factor(sub("^$","X",vacc_status_new), levels=c("1d","2d","3d"))]
 
+library(survey)
+tb1.iptw <- list(postacute=table1(cohort, "wts_postacute"), vaccinated=table1(cohort_, "wts_postacute"))
 
+#save(W.glm, tb1, tb1.iptw, file=paste0("COMP_", COMP, PHASE, "_W.glm.RData"))
+saveRDS(cohort, paste0("COMP_", COMP, PHASE, "_2.cohort_iptw_PCR_jiayi.RDS"))
 
-# Sen PCR+
+library(writexl)
+xl_tabs <- c(lapply(c(tb1.iptw,tb1), function(t) as.data.table(t)))
+write_xlsx(xl_tabs, paste0("output/tab_", COMP, PHASE, "_PCR_jiayi.xlsx"))
 
-cohort_pcr <- readRDS("LONGCOVID_CC/cohort_acute_pcr.RDS")
-# SELECT comparison
-COMP <- "INF_VAC_dose_May_pcr"
-cohort <- cohort_pcr[!is.na(group) & infected==1]
-cohort$group <- cohort$group_dose
-PHASE <- "_acute"
+rm(cohort, tb1, tb1.iptw, W.glm, W.glm.acute, xl_tabs)
 
-# 2. Propensity score ----
-
-library(cobalt)
-
-PS_def <- setDT(read_excel("LONGCOVID_CC/codes.xlsx", sheet="PS"))[!is.na(Name)]
-PS_formula <- function(exp,lvl) paste0(exp, " ~ ", paste0(PS_def[Set<=lvl, Name], collapse=" + "))
-PS_assess <- function(out) {
-  print(summary(out))
-  print(bal.tab(out))
-  bal.plot(out, which="both")
-}
-
-library(WeightIt)
-cohort[, acute := 1]
-W.glm <- weightit(as.formula(PS_formula("group",4)), data=cohort, estimand="ATE", method="ps")
-PS_assess(W.glm)
-cohort[, wts_acute := W.glm$weights]
-
-
-saveRDS(cohort, paste0("LONGCOVID_CC/COMP_", COMP, PHASE, "_2.cohort_iptw.RDS"))
 gc()
 
